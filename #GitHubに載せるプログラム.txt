@@ -1,0 +1,176 @@
+#GitHubに載せるプログラム
+
+#前回の処理が影響しないように、ここでけしておく
+rm(list = ls(all.names = TRUE))
+
+#分析に必要なパッケージは最初に読んでおく
+library(ggplot2)
+library(tidyverse)
+library(data.table)
+library(car)
+library(ggeffects)
+
+
+setwd("D:/20230411/pragmatics/jikkendai")
+getwd()
+
+dat <- fread("D:/20230411/pragmatics/jikkendai/sugunikesu.csv", header=TRUE)
+
+
+#omit incorrect trials in recognition task
+dat <- subset(dat,
+              (dat$inserted_position == "#9" & dat$retention_task == 2) |
+                (dat$inserted_position == "#6" & dat$retention_task == 1))
+
+
+
+#Analysis of Experiment 1
+
+dat1 <- dat[dat$first_target==0,]
+
+dat1 <- mutate(dat1, category = 3) #other strategies
+dat1$category[(dat1$second_target ==4 &
+                 rowSums(dat1[, paste0("c", 1:9)]) ==1 &
+                 dat1$"c4" ==1) |
+                (dat1$second_target ==5 &
+                   rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                   dat1$"c5" ==1) |
+                (dat1$second_target ==6 &
+                   rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                   dat1$"c6" == 1) |
+                (dat1$second_target ==7 &
+                   rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                   dat1$"c7" == 1) |
+                (dat1$second_target ==8 &
+                   rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                   dat1$"c8" == 1)] <- 1 #selecting a rare event
+
+dat1$category[rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                dat1$"c9" == 1] <-2 # selecting a recent event
+
+dat1$category[dat1$second_target == 9 & dat1$category ==2] <-1 #replace "selecting a recent event" from "selecting a rare event" in #9 condition
+
+dat1 <- mutate(dat1, cat = if_else(category == 1, 1, 0))
+
+dat1 <- mutate(dat1, pos_contrast = ifelse(second_target == 7, -1, ifelse(second_target == 8, 0, 1)))
+dat1 <- mutate(dat1, pos_contrast_step = ifelse(second_target == 7, -0.5, ifelse(second_target == 8,-0.5,1)))##4と#5は変わらないと過程しているから同じ値を入れる
+
+l1 <- glm(cat ~ pos_contrast, data = subset(dat1,dat1$age =="adults" & (dat1$second_target ==7 | dat1$second_target ==8 | dat1$second_target ==9)), family = binomial)
+l2 <- glm(cat ~ pos_contrast_step, data = subset(dat1,dat1$age =="adults" & (dat1$second_target ==7 | dat1$second_target ==8 | dat1$second_target ==9)), family = binomial)
+
+summary(l1)#linear
+summary(l2)#段階
+
+plot(ggpredict(l1), rawdata = T)#linearはpositionによって上がっていっている
+plot(ggpredict(l2), rawdata = T)#段階は#4と#5は同じで#6でだけ上がっている
+
+dat1[dat1$age == "children" & dat1$second_target == 9 & dat1$category==1,] %>% nrow()
+
+
+
+#Analysis of Experiment 3
+
+dat3 <- dat[dat$inserted_position =="#9",]
+
+dat3 <- mutate(dat3, category = 4)#other strategies
+
+
+inserted_cond <- dat3$inserted_position == "#9"
+row_sum_cond <- rowSums(dat3[, paste0("c", 1:9)]) == 1
+second_targets <- dat3$second_target %in% 7:9
+first_target_not_zero <- dat3$first_target != 0
+
+dat3$category[inserted_cond & row_sum_cond] <- ifelse(
+  inserted_cond & row_sum_cond & ((second_targets & dat3[, paste0("c", dat3$second_target)] == 1) |
+                                    (first_target_not_zero & dat3$second_target == 9 & dat3$c9 == 1)),
+  1,
+  dat3x$category
+)
+
+
+targets <- expand.grid(first = 4:6, second = 7:9)
+row_sum_cond <- rowSums(dat1[, paste0("c", 1:9)]) == 2
+inserted_cond <- dat3$inserted_position == "#9"
+
+dat3$category[inserted_cond & row_sum_cond] <- sapply(1:nrow(dat3), function(i) {
+  if (!inserted_cond[i] || !row_sum_cond[i]) return(dat3$category[i])
+  
+  for (j in 1:nrow(targets)) {
+    first_target_col <- paste0("c", targets$first[j])
+    second_target_col <- paste0("c", targets$second[j])
+    
+    if (dat1$first_target[i] == targets$first[j] &&
+        dat1$second_target[i] == targets$second[j] &&
+        dat1[[first_target_col]][i] == 1 &&
+        dat1[[second_target_col]][i] == 1) {
+      return(2)
+    }
+  }
+  
+  return(dat1$category[i])
+})
+
+
+
+dat3$category[dat3$inserted_position == "#9" &
+                dat3$second_target != 9 &
+                rowSums(dat1[, paste0("c", 1:9)]) == 1 &
+                dat1$"c9" == 1] <-3 #selecting a recent event
+
+dat3 <- mutate(dat3, cat = if_else(category == 1, 1, 0))
+
+dat3 <- dat1[dat1$first_target == 4,]#example
+
+dat3 <- mutate(dat1, pos_contrast = ifelse(first_target == 7, -1, ifelse(second_target == 8, 0, 1)))
+dat3 <- mutate(dat1, pos_contrast_step = ifelse(first_target == 7, -0.5, ifelse(second_target == 8,-0.5,1)))##4と#5は変わらないと過程しているから同じ値を入れる
+
+l1 <- glm(cat ~ pos_contrast, data = subset(dat1,dat1$age =="children"), family = binomial)
+l2 <- glm(cat ~ pos_contrast_step, data = subset(dat1,dat1$age =="children"), family = binomial)
+
+summary(l1)#linear
+summary(l2)#段階
+
+plot(ggpredict(l1), rawdata = T)#linearはpositionによって上がっていっている
+plot(ggpredict(l2), rawdata = T)#段階は#4と#5は同じで#6でだけ上がっている
+
+
+
+
+#================oddが2つで#6に挿入されているとき====================
+
+
+dat1 <- dat[dat$inserted_position =="#6",]
+
+dat1 <- mutate(dat1, category = 3)
+
+
+dat1$category[(rowSums(dat1[, paste0("c", 1:9)]) == 1
+               (dat1$first_target == 4 &
+                   dat1$"c4" == 1) |
+                 (dat1$first_target == 5 &
+                    dat1$"c5" == 1) |
+                 (dat1$first_target == 6 &
+                    dat1$"c6" == 1))] <- 1 #selecting a rare event
+
+dat1$category[rowSums(dat1[, paste0("c", 1:9)]) == &
+                dat1$"c6" == 1] <- 2
+
+dat1$category[dat1$first_target==6 & dat1$category ==2]<-1 #replace "selecting a recent event" from "selecting a rare event" in #9 condition
+
+d1 <- dat1[dat1$second_target == 9,]
+d1 <- mutate(d1, cat = if_else(category == 1, 1, 0))
+
+d1$first_target <- as.factor(d1$first_target)
+
+d1 <- mutate(d1, pos_contrast = ifelse(first_target == 4, -1, ifelse(first_target == 5, 0, 1)))
+d1 <- mutate(d1, pos_contrast_step = ifelse(first_target == 4, -0.5, ifelse(first_target == 5,-0.5,1)))##4と#5は変わらないと過程しているから同じ値を入れる
+
+l1 <- glm(cat ~ pos_contrast, data = subset(d1,d1$age =="children"), family = binomial)
+l2 <- glm(cat ~ pos_contrast_step, data = subset(d1,d1$age =="children"), family = binomial)
+
+summary(l1)#linear
+summary(l2)#段階
+
+
+plot(ggpredict(l1), rawdata = T)#linearはpositionによって上がっていっている
+plot(ggpredict(l2), rawdata = T)#段階は#4と#5は同じで#6でだけ上がっている
